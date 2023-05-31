@@ -1,5 +1,10 @@
 package model
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Steps represents a list of steps
 type Steps []*Step
 
@@ -26,6 +31,34 @@ type Step struct {
 
 	// Shell is the shell to use for the step.
 	Shell string `yaml:"shell,omitempty"`
+}
+
+func (s *Step) LogMessage(stage ActionStage) string {
+	var prefix string
+
+	switch stage {
+	case ActionStagePre:
+		prefix = "Pre"
+	case ActionStageMain:
+		if s.Name == "" {
+			prefix = "Run"
+		}
+	case ActionStagePost:
+		prefix = "Post"
+	}
+
+	if s.Name != "" {
+		return strings.Join([]string{prefix, s.Name}, " ")
+	}
+
+	switch s.Type() {
+	case StepTypeAction:
+		return strings.Join([]string{prefix, s.Uses}, " ")
+	case StepTypeRun:
+		return strings.Join([]string{prefix, strings.Split(s.Run, "\n")[0]}, " ")
+	default:
+		return fmt.Sprintf("%s %s", prefix, s.ID)
+	}
 }
 
 // StepType represents the type of a step
