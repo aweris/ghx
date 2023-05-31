@@ -1,0 +1,73 @@
+project_name: ghx
+
+changelog:
+  use: github
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^build:'
+
+release:
+  footer: |
+    ### Summary
+    **Full Changelog**: https://github.com/aweris/ghx/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+builds:
+  - id: ghx
+    binary: ghx
+    dir: .
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X 'github.com/aweris/ghx/internal/version/version.commitDate={{ .CommitDate }}'
+      - -X 'github.com/aweris/ghx/internal/version/version.gitCommit={{ .FullCommit }}'
+      - -X 'github.com/aweris/ghx/internal/version/version.gitVersion=v{{ trimprefix .Version "v" }}'
+      - -X 'github.com/aweris/ghx/internal/version/version.major={{ .Major }}'
+      - -X 'github.com/aweris/ghx/internal/version/version.minor={{ .Minor }}'
+    goos:
+      - linux
+    goarch:
+      - amd64
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+# package only the binary
+archives:
+  - format: gz
+    files:
+      - none*
+
+dockers:
+  - use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile:
+      Dockerfile
+    image_templates:
+      - ghcr.io/aweris/{{ .ProjectName }}:v{{trimprefix .Version "v"}}
+      - ghcr.io/aweris/{{ .ProjectName }}:latest
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: '{{ incpatch .Version }}-snapshot'

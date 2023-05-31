@@ -1,0 +1,22 @@
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        with:
+          # This is pat required to trigger github action workflows from release-please
+          # https://github.com/google-github-actions/release-please-action#github-credentials
+          token: ${{ secrets.RELEASE_PAT }}
+          release-type: go
+          package-name: ghx
+          pull-request-title-pattern: "build${scope}: release${component} ${version}"
+          changelog-notes-type: github
+          skip-github-release: true
