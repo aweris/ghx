@@ -31,11 +31,11 @@ builds:
     ldflags:
       - -s
       - -w
-      - -X 'github.com/aweris/ghx/internal/version/version.commitDate={{ .CommitDate }}'
-      - -X 'github.com/aweris/ghx/internal/version/version.gitCommit={{ .FullCommit }}'
-      - -X 'github.com/aweris/ghx/internal/version/version.gitVersion=v{{ trimprefix .Version "v" }}'
-      - -X 'github.com/aweris/ghx/internal/version/version.major={{ .Major }}'
-      - -X 'github.com/aweris/ghx/internal/version/version.minor={{ .Minor }}'
+      - -X 'github.com/aweris/ghx/internal/version.commitDate={{ .CommitDate }}'
+      - -X 'github.com/aweris/ghx/internal/version.gitCommit={{ .FullCommit }}'
+      - -X 'github.com/aweris/ghx/internal/version.gitVersion=v{{ trimprefix .Version "v" }}'
+      - -X 'github.com/aweris/ghx/internal/version.major={{ .Major }}'
+      - -X 'github.com/aweris/ghx/internal/version.minor={{ .Minor }}'
     goos:
       - linux
     goarch:
