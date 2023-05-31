@@ -48,14 +48,14 @@ func (s *Step) LogMessage(stage ActionStage) string {
 	}
 
 	if s.Name != "" {
-		return strings.Join([]string{prefix, s.Name}, " ")
+		return strings.TrimSpace(strings.Join([]string{prefix, s.Name}, " "))
 	}
 
 	switch s.Type() {
 	case StepTypeAction:
-		return strings.Join([]string{prefix, s.Uses}, " ")
+		return strings.TrimSpace(strings.Join([]string{prefix, s.Uses}, " "))
 	case StepTypeRun:
-		return strings.Join([]string{prefix, strings.Split(s.Run, "\n")[0]}, " ")
+		return strings.TrimSpace(strings.Join([]string{prefix, strings.Split(s.Run, "\n")[0]}, " "))
 	default:
 		return fmt.Sprintf("%s %s", prefix, s.ID)
 	}

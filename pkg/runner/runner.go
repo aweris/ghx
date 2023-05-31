@@ -2,11 +2,12 @@ package runner
 
 import (
 	"context"
-	"dagger.io/dagger"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"dagger.io/dagger"
 
 	"github.com/aweris/ghx/internal/log"
 	"github.com/aweris/ghx/pkg/model"
