@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"dagger.io/dagger"
 
@@ -202,16 +201,10 @@ func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, sr
 		return StatusFailed, fmt.Errorf("no runs for step %s", srs.Step.ID)
 	}
 
-	if stage == model.ActionStageMain {
-		r.logger.Info(fmt.Sprintf("Run %s", srs.Step.Uses))
-	} else {
-		// capitalize first letter of stage to keep consistency with github actions
-		str := string(stage)
-		r.logger.Info(fmt.Sprintf("%s run %s", strings.ToUpper(str[:1])+str[1:], srs.Step.Uses))
-	}
-
-	// start new log group to separate action logs
+	// Print step header and wrap step execution in a group
+	r.logger.Info(srs.Step.LogMessage(stage))
 	r.logger.StartGroup()
+	defer r.logger.EndGroup()
 
 	err = execCommand(ctx, stage, []string{"node", fmt.Sprintf("%s/%s", path, runs)}, srs, r.logger)
 	if err != nil {
@@ -219,9 +212,6 @@ func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, sr
 		srs.Result.Outcome = model.StepStatusFailure
 		return StatusFailed, err
 	}
-
-	// end log group
-	r.logger.EndGroup()
 
 	srs.Result.Conclusion = model.StepStatusSuccess
 	srs.Result.Outcome = model.StepStatusSuccess
@@ -234,6 +224,14 @@ func (r *runner) execStepRun(ctx context.Context, stage model.ActionStage, srs *
 	if stage != model.ActionStageMain {
 		return StatusSkipped, nil
 	}
+
+	// TODO: move this to execStep when we add skip and continue-on-error support. Otherwise, we will be printing
+	// invalid logs
+
+	// Print step header and wrap step execution in a group
+	r.logger.Info(srs.Step.LogMessage(stage))
+	r.logger.StartGroup()
+	defer r.logger.EndGroup()
 
 	// script directory
 	path := filepath.Join(ContainerRunnerPath, "scripts", srs.Step.ID)
