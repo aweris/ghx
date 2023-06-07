@@ -7,7 +7,7 @@ import (
 
 var (
 	commandReColon = regexp.MustCompile(`^::([\w-]+)(?:\s+((?:[\w-]+=[^,]+,)*[\w-]+=[^,]+))??::(.*?)$`)
-	commandReHash  = regexp.MustCompile(`^##\[(\w+)([^]]*)](?:/(.*))?$`) //
+	commandReHash  = regexp.MustCompile(`##\[(\S+)([^]]*)](.*)?$`) //
 )
 
 // TODO: add possible command names as constants
