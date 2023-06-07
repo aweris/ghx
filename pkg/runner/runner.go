@@ -218,7 +218,12 @@ func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, sr
 	r.logger.StartGroup()
 	defer r.logger.EndGroup()
 
-	err = execCommand(ctx, actions.ActionStage(stage), []string{"node", fmt.Sprintf("%s/%s", path, runs)}, srs, r.logger, r.context)
+	rv, err := runs.Eval(r.context)
+	if err != nil {
+		return StatusFailed, err
+	}
+
+	err = execCommand(ctx, actions.ActionStage(stage), []string{"node", fmt.Sprintf("%s/%s", path, rv)}, srs, r.logger, r.context)
 	if err != nil {
 		srs.Result.Conclusion = model.StepStatusFailure
 		srs.Result.Outcome = model.StepStatusFailure
