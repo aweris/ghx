@@ -29,3 +29,11 @@ linters:
     - unused
     - unused
     - whitespace
+
+linters-settings:
+  depguard:
+    rules:
+      main:
+        allow:
+          - $gostd
+          - github.com/rhysd/actionlint
