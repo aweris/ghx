@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/aweris/ghx/pkg/actions"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ func writeRunnerState(state *State) error {
 
 // exportLogArtifact exports a log artifact to the file system.
 func exportStepLogs(srs *StepRunState, stage model.ActionStage, filename string, content []byte) error {
-	path := filepath.Join(srs.GetStepDataDir(stage), "logs")
+	path := filepath.Join(srs.GetStepDataDir(actions.ActionStage(stage)), "logs")
 
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return err

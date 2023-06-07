@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"github.com/aweris/ghx/pkg/actions"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,9 +45,10 @@ type Runner interface {
 var _ Runner = new(runner)
 
 type runner struct {
-	client *dagger.Client
-	state  *State
-	logger *log.Logger
+	client  *dagger.Client
+	state   *State
+	context *actions.Context
+	logger  *log.Logger
 }
 
 // New creates a new runner
@@ -60,7 +62,17 @@ func New(client *dagger.Client) (Runner, error) {
 		return nil, err
 	}
 
-	return &runner{client: client, state: state, logger: log.NewLogger()}, nil
+	context, err := actions.NewContext()
+	if err != nil {
+		return nil, err
+	}
+
+	return &runner{
+		client:  client,
+		state:   state,
+		context: context,
+		logger:  log.NewLogger(),
+	}, nil
 }
 
 func (r *runner) WithJob(workflow *model.Workflow, job *model.Job) {
@@ -175,7 +187,7 @@ func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, sr
 	// add action to step run state
 	srs.Action = action
 
-	var runs string
+	var runs *actions.String
 
 	switch stage {
 	case model.ActionStagePre:
@@ -189,12 +201,12 @@ func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, sr
 	}
 
 	// if runs is empty for pre or post, this is a no-op step
-	if runs == "" && stage != model.ActionStageMain {
+	if runs == nil && stage != model.ActionStageMain {
 		return StatusSkipped, nil
 	}
 
 	// if runs is empty for main, this is a failure
-	if runs == "" && stage == model.ActionStageMain {
+	if runs == nil && stage == model.ActionStageMain {
 		srs.Result.Conclusion = model.StepStatusFailure
 		srs.Result.Outcome = model.StepStatusFailure
 
@@ -206,7 +218,7 @@ func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, sr
 	r.logger.StartGroup()
 	defer r.logger.EndGroup()
 
-	err = execCommand(ctx, stage, []string{"node", fmt.Sprintf("%s/%s", path, runs)}, srs, r.logger)
+	err = execCommand(ctx, actions.ActionStage(stage), []string{"node", fmt.Sprintf("%s/%s", path, runs)}, srs, r.logger, r.context)
 	if err != nil {
 		srs.Result.Conclusion = model.StepStatusFailure
 		srs.Result.Outcome = model.StepStatusFailure
@@ -251,7 +263,7 @@ func (r *runner) execStepRun(ctx context.Context, stage model.ActionStage, srs *
 	}
 
 	// execute the script
-	err = execCommand(ctx, stage, []string{"bash", "--noprofile", "--norc", "-e", "-o", "pipefail", path}, srs, r.logger)
+	err = execCommand(ctx, actions.ActionStage(stage), []string{"bash", "--noprofile", "--norc", "-e", "-o", "pipefail", path}, srs, r.logger, r.context)
 	if err != nil {
 		srs.Result.Conclusion = model.StepStatusFailure
 		srs.Result.Outcome = model.StepStatusFailure

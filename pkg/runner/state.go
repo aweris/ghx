@@ -9,6 +9,7 @@ import (
 
 	"dagger.io/dagger"
 
+	"github.com/aweris/ghx/pkg/actions"
 	"github.com/aweris/ghx/pkg/model"
 )
 
@@ -20,8 +21,8 @@ type State struct {
 }
 
 // LoadAction loads the action from the given source and stores it in the state
-func (s *State) LoadAction(ctx context.Context, client *dagger.Client, source string) (string, *model.Action, error) {
-	action, err := model.LoadActionFromSource(ctx, client, source)
+func (s *State) LoadAction(ctx context.Context, client *dagger.Client, source string) (string, *actions.Action, error) {
+	action, err := actions.LoadActionFromSource(ctx, client, source)
 	if err != nil {
 		return "", nil, err
 	}
@@ -39,13 +40,13 @@ func (s *State) LoadAction(ctx context.Context, client *dagger.Client, source st
 }
 
 // GetAction returns the action for the given source. If the action is not loaded yet, it will be loaded and stored in the state
-func (s *State) GetAction(ctx context.Context, client *dagger.Client, source string) (string, *model.Action, error) {
+func (s *State) GetAction(ctx context.Context, client *dagger.Client, source string) (string, *actions.Action, error) {
 	path := s.ActionPathsBySource[source]
 	if path == "" {
 		return s.LoadAction(ctx, client, source)
 	}
 
-	action, err := model.LoadActionFromSource(ctx, client, path)
+	action, err := actions.LoadActionFromSource(ctx, client, path)
 	if err != nil {
 		return "", nil, err
 	}
@@ -72,16 +73,16 @@ type StepRunState struct {
 	Step   *model.Step       `json:"step"`             // definition of the step
 	Result *model.StepResult `json:"result"`           // result of the step
 	State  map[string]string `json:"state"`            // state of the step
-	Action *model.Action     `json:"action,omitempty"` // action of the step if it is an action step
+	Action *actions.Action   `json:"action,omitempty"` // action of the step if it is an action step
 }
 
 // GetStepDataDir returns the directory where the step related data is stored like state, logs, artifacts etc.
-func (s *StepRunState) GetStepDataDir(stage model.ActionStage) string {
+func (s *StepRunState) GetStepDataDir(stage actions.ActionStage) string {
 	return filepath.Join(ContainerRunnerPath, "steps", s.Step.ID, string(stage))
 }
 
 // GetStepEnv returns the environment variables for the step to load in cmd exec
-func (s *StepRunState) GetStepEnv(stage model.ActionStage) ([]string, error) {
+func (s *StepRunState) GetStepEnv(stage actions.ActionStage, ctx *actions.Context) ([]string, error) {
 	// getting the current environment first
 	env := os.Environ()
 
@@ -104,18 +105,17 @@ func (s *StepRunState) GetStepEnv(stage model.ActionStage) ([]string, error) {
 				continue
 			}
 
-			if v.Default == "" {
+			if v.Default == nil {
 				continue
 			}
 
-			// missing in step config and it has a default value
+			val, err := v.Default.Eval(ctx)
+			if err != nil {
+				return nil, err
+			}
 
-			// currently only support boolean default values. if the default value is not boolean, it will be ignored
-			// TODO: support other types can contain expressions, so we need to evaluate them first
-			normalised := strings.ToLower(v.Default)
-
-			if normalised == "true" || normalised == "false" {
-				env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), normalised))
+			if val != "" {
+				env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), val))
 			}
 		}
 	}

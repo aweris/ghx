@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aweris/ghx/pkg/actions"
 	"io"
 	"os"
 	"os/exec"
@@ -16,9 +17,9 @@ import (
 )
 
 // execCommand executes a command and processes the output for github workflow commands.
-func execCommand(ctx context.Context, stage model.ActionStage, args []string, srs *StepRunState, logger *log.Logger) error {
+func execCommand(ctx context.Context, stage actions.ActionStage, args []string, srs *StepRunState, logger *log.Logger, actx *actions.Context) error {
 	// get the step env
-	env, err := srs.GetStepEnv(stage)
+	env, err := srs.GetStepEnv(stage, actx)
 	if err != nil {
 		return err
 	}
@@ -80,11 +81,11 @@ func execCommand(ctx context.Context, stage model.ActionStage, args []string, sr
 	cmdErr := cmd.Wait()
 
 	if data := stdout.Bytes(); len(data) > 0 {
-		_ = exportStepLogs(srs, stage, "stdout.log", data)
+		_ = exportStepLogs(srs, model.ActionStage(stage), "stdout.log", data)
 	}
 
 	if data := stderr.Bytes(); len(data) > 0 {
-		_ = exportStepLogs(srs, stage, "stderr.log", data)
+		_ = exportStepLogs(srs, model.ActionStage(stage), "stderr.log", data)
 	}
 
 	if len(commands) > 0 {
@@ -93,11 +94,11 @@ func execCommand(ctx context.Context, stage model.ActionStage, args []string, sr
 			fmt.Printf("failed to marshal commands to json: %v\n", err)
 		}
 
-		_ = exportStepLogs(srs, stage, "workflow_commands.json", data)
+		_ = exportStepLogs(srs, model.ActionStage(stage), "workflow_commands.json", data)
 	}
 
 	if data := commandsRaw.Bytes(); len(data) > 0 {
-		_ = exportStepLogs(srs, stage, "workflow_commands.log", data)
+		_ = exportStepLogs(srs, model.ActionStage(stage), "workflow_commands.log", data)
 	}
 
 	if cmdErr != nil {
@@ -146,7 +147,7 @@ func processGithubWorkflowCommands(cmd *model.Command, srs *StepRunState, logger
 	return nil
 }
 
-func processFileCommands(srs *StepRunState, stage model.ActionStage) error {
+func processFileCommands(srs *StepRunState, stage actions.ActionStage) error {
 	dir := filepath.Join(srs.GetStepDataDir(stage), "file_commands")
 
 	env, err := valuesFromFile(filepath.Join(dir, "env"))

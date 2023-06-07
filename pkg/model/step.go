@@ -33,6 +33,15 @@ type Step struct {
 	Shell string `yaml:"shell,omitempty"`
 }
 
+// ActionStage represents the stage of an action. It can be pre, main or post.
+type ActionStage string
+
+const (
+	ActionStagePre  ActionStage = "pre"
+	ActionStageMain ActionStage = "main"
+	ActionStagePost ActionStage = "post"
+)
+
 func (s *Step) LogMessage(stage ActionStage) string {
 	var prefix string
 
