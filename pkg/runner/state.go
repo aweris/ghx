@@ -115,7 +115,7 @@ func (s *StepRunState) GetStepEnv(stage actions.ActionStage, ctx *actions.Contex
 			}
 
 			if val != v.Default.Value {
-				fmt.Printf("Input %s evaluated to %s\n", k, val)
+				fmt.Printf("Input %s evaluated to %s\n", v.Default.Value, val)
 			}
 
 			if val != "" {
