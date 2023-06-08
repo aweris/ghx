@@ -114,6 +114,10 @@ func (s *StepRunState) GetStepEnv(stage actions.ActionStage, ctx *actions.Contex
 				return nil, err
 			}
 
+			if val != v.Default.Value {
+				fmt.Printf("Input %s evaluated to %s\n", k, val)
+			}
+
 			if val != "" {
 				env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), val))
 			}
