@@ -29,11 +29,16 @@ func NewCommand() *cobra.Command {
 				return fmt.Errorf("workflow and job name must be provided")
 			}
 
-			client, err := dagger.Connect(cmd.Context(), dagger.WithLogOutput(os.Stdout))
+			var opts []dagger.ClientOpt
+
+			if os.Getenv("RUNNER_DEBUG") == "1" {
+				opts = append(opts, dagger.WithLogOutput(os.Stdout))
+			}
+
+			client, err := dagger.Connect(cmd.Context(), opts...)
 			if err != nil {
 				return err
 			}
-			defer client.Close()
 
 			// TODO: temporary solution to load workflow from current directory. `gh` is missing in runner image
 			workflows, err := repository.LoadWorkflows(cmd.Context(), client, ".")

@@ -32,7 +32,13 @@ func NewCommand() *cobra.Command {
 		Use:   "step",
 		Short: "Add new step to execute",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := dagger.Connect(cmd.Context(), dagger.WithLogOutput(os.Stdout))
+			var opts []dagger.ClientOpt
+
+			if os.Getenv("RUNNER_DEBUG") == "1" {
+				opts = append(opts, dagger.WithLogOutput(os.Stdout))
+			}
+
+			client, err := dagger.Connect(cmd.Context(), opts...)
 			if err != nil {
 				return err
 			}
