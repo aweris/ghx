@@ -3,12 +3,12 @@ package state
 import (
 	"context"
 	"fmt"
-	"github.com/aweris/ghx/pkg/actions"
 	"io"
 	"strconv"
 
 	"dagger.io/dagger"
 
+	"github.com/aweris/ghx/pkg/actions"
 	"github.com/aweris/ghx/pkg/config"
 	"github.com/aweris/ghx/pkg/model"
 )

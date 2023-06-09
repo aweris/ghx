@@ -2,10 +2,11 @@ package actions
 
 import (
 	"fmt"
-	"github.com/aweris/ghx/pkg/expression"
-	"github.com/aweris/ghx/pkg/model"
 	"math"
 	"os"
+
+	"github.com/aweris/ghx/pkg/expression"
+	"github.com/aweris/ghx/pkg/model"
 )
 
 var _ expression.VariableProvider = new(Context)

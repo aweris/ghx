@@ -3,12 +3,12 @@ package runner
 import (
 	"bufio"
 	"fmt"
-	"github.com/aweris/ghx/pkg/actions"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/aweris/ghx/internal/log"
+	"github.com/aweris/ghx/pkg/actions"
 	"github.com/aweris/ghx/pkg/config"
 	"github.com/aweris/ghx/pkg/model"
 	statepkg "github.com/aweris/ghx/pkg/state"
