@@ -24,7 +24,7 @@ type State struct {
 
 // GetState returns the state of the runner from the state file
 func GetState() (*State, error) {
-	// Ensure initialize proper emtpy state
+	// Ensure initialize proper empty state
 	s := &State{
 		Actions: make(map[string]*ActionState),
 		Env:     make(map[string]string),
@@ -35,7 +35,7 @@ func GetState() (*State, error) {
 		return nil, err
 	}
 
-	if err := config.ReadJsonFile("state.json", s); err != nil {
+	if err := config.ReadJSONFile("state.json", s); err != nil {
 		return nil, fmt.Errorf("failed to read state file: %v", err)
 	}
 
@@ -44,7 +44,7 @@ func GetState() (*State, error) {
 
 // Close writes the state of the runner to the state file
 func (s *State) Close() error {
-	return config.WriteJsonFile("state.json", s)
+	return config.WriteJSONFile("state.json", s)
 }
 
 // AddAction adds a new action to the state

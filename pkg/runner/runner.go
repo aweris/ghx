@@ -290,7 +290,7 @@ func (r *runner) execCmd(ctx context.Context, ss *statepkg.StepState, stage mode
 	}
 
 	if len(commands) > 0 {
-		config.WriteJsonFile(filepath.Join("steps", ss.Step.ID, "logs", string(stage), "workflow_commands.json"), commands)
+		config.WriteJSONFile(filepath.Join("steps", ss.Step.ID, "logs", string(stage), "workflow_commands.json"), commands)
 	}
 
 	if data := commandsRaw.Bytes(); len(data) > 0 {

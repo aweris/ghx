@@ -52,7 +52,6 @@ func NewCommand() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("failed to parse step json: %w", err)
 				}
-
 			} else {
 				if stepOverride && stepID == "" {
 					return fmt.Errorf("step id must be provided to override")

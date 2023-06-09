@@ -66,8 +66,8 @@ func WriteFile(file string, content []byte, permissions os.FileMode) error {
 	return os.WriteFile(GetPath(file), content, permissions)
 }
 
-// ReadJsonFile reads the given path as a JSON file under the ghx data home directory and unmarshal it into the given value.
-func ReadJsonFile[T any](file string, val *T) error {
+// ReadJSONFile reads the given path as a JSON file under the ghx data home directory and unmarshal it into the given value.
+func ReadJSONFile[T any](file string, val *T) error {
 	data, err := os.ReadFile(GetPath(file))
 	if err != nil {
 		return err
@@ -81,8 +81,8 @@ func ReadJsonFile[T any](file string, val *T) error {
 	return json.Unmarshal(data, val)
 }
 
-// WriteJsonFile writes the given value to the given path as a JSON file under the ghx data home directory.
-func WriteJsonFile(file string, val interface{}) error {
+// WriteJSONFile writes the given value to the given path as a JSON file under the ghx data home directory.
+func WriteJSONFile(file string, val interface{}) error {
 	data, err := json.Marshal(val)
 	if err != nil {
 		return err
