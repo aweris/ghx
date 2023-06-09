@@ -45,7 +45,13 @@ func NewCommand() *cobra.Command {
 }
 
 func run(ctx context.Context) error {
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	var opts []dagger.ClientOpt
+
+	if os.Getenv("RUNNER_DEBUG") == "1" {
+		opts = append(opts, dagger.WithLogOutput(os.Stdout))
+	}
+
+	client, err := dagger.Connect(ctx, opts...)
 	if err != nil {
 		return err
 	}
