@@ -1,21 +1,21 @@
 package runner
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"dagger.io/dagger"
 
 	"github.com/aweris/ghx/internal/log"
+	"github.com/aweris/ghx/pkg/config"
 	"github.com/aweris/ghx/pkg/model"
-)
-
-const (
-	ContainerRunnerPath  = "/home/runner/_temp/ghx" // path where the state and artifacts are stored in the container
-	ContainerRunnerState = "state.json"             // name of the state file
+	statepkg "github.com/aweris/ghx/pkg/state"
 )
 
 type ExecStepStatus string
@@ -28,15 +28,6 @@ const (
 
 // Runner is the interface for the runner
 type Runner interface {
-	io.Closer
-
-	// WithStep adds a step to the runner state to be executed with Execute(), if override is true, it will override
-	// the step with the same id
-	WithStep(step *model.Step, override bool)
-
-	// WithJob adds a job to the runner state to be executed with Execute()
-	WithJob(workflow *model.Workflow, job *model.Job)
-
 	// Execute executes the steps configured previously with WithStep(), WithJob()
 	Execute(ctx context.Context) error
 }
@@ -45,220 +36,271 @@ var _ Runner = new(runner)
 
 type runner struct {
 	client *dagger.Client
-	state  *State
+	state  *statepkg.State
 	logger *log.Logger
 }
 
 // New creates a new runner
-func New(client *dagger.Client) (Runner, error) {
-	if err := ensureDir(ContainerRunnerPath); err != nil {
-		return nil, err
-	}
-
-	state, err := readRunnerState()
-	if err != nil {
-		return nil, err
-	}
-
+func New(client *dagger.Client, state *statepkg.State) (Runner, error) {
 	return &runner{client: client, state: state, logger: log.NewLogger()}, nil
-}
-
-func (r *runner) WithJob(workflow *model.Workflow, job *model.Job) {
-	for k, v := range workflow.Environment {
-		os.Setenv(k, v)
-	}
-
-	for k, v := range job.Environment {
-		os.Setenv(k, v)
-	}
-
-	for _, step := range job.Steps {
-		r.WithStep(step, false)
-	}
-}
-
-// WithStep adds a step to the steps configuration file to be executed by the runner. If override is true, it will override
-// the step with the same id. Method assumes override and step id validated by the caller
-func (r *runner) WithStep(step *model.Step, override bool) {
-	//TODO: add validation for step type
-	if step.ID == "" {
-		step.ID = fmt.Sprintf("%d", len(r.state.StepOrder))
-	}
-
-	r.state.AddNewStep(step, override)
-
-	switch step.Type() {
-	case model.StepTypeAction:
-		r.logger.Infof("New step added", "type", model.StepTypeAction, "uses", step.Uses, "index", "step.ID")
-	case model.StepTypeRun:
-		r.logger.Infof("New step added", "type", model.StepTypeRun, "index", "step.ID")
-	}
 }
 
 // Execute executes the steps configured previously with WithStep()
 func (r *runner) Execute(ctx context.Context) error {
-	if err := r.execSetup(ctx); err != nil {
+	if err := r.setupJob(ctx); err != nil {
 		return err
 	}
 
 	// TODO: check conditionals like continue-on-error, skip etc...
 
+	// ids of the steps to run with execution order
+	ids := r.state.GetStepOrder()
+
 	// Run stages
-	for _, key := range r.state.StepOrder {
-		result, _ := r.execStep(ctx, model.ActionStagePre, key)
-		if result == StatusFailed {
-			return fmt.Errorf("step %s failed at pre stage", key)
-		}
-	}
+	for _, stepID := range ids {
+		// TODO: also add conditional check here with expression evaluation
+		ss, _ := r.state.GetStepState(stepID)
 
-	for _, key := range r.state.StepOrder {
-		result, _ := r.execStep(ctx, model.ActionStageMain, key)
-		if result == StatusFailed {
-			return fmt.Errorf("step %s failed at main stage", key)
-		}
-	}
-
-	for _, key := range r.state.StepOrder {
-		result, _ := r.execStep(ctx, model.ActionStagePost, key)
-		if result == StatusFailed {
-			return fmt.Errorf("step %s failed at post stage", key)
-		}
-	}
-
-	return nil
-}
-
-// Close persist latest runner state to disk
-func (r *runner) Close() error {
-	return writeRunnerState(r.state)
-}
-
-func (r *runner) execSetup(ctx context.Context) error {
-	for _, stepID := range r.state.StepOrder {
-		srs := r.state.Children[stepID]
-		if srs.Step.Uses == "" {
+		// skip run steps since they don't have pre runs
+		if ss.Step.Type() == model.StepTypeRun {
 			continue
 		}
 
-		_, _, err := r.state.LoadAction(ctx, r.client, srs.Step.Uses)
-		if err != nil {
-			return err
+		as, _ := r.state.GetActionState(ss.Step.Uses)
+
+		if as.Metadata.Runs.Pre == "" {
+			continue
+		}
+
+		result, _ := r.execStep(ctx, ss, model.ActionStagePre)
+		if result == StatusFailed {
+			return fmt.Errorf("step %s failed at pre stage", stepID)
+		}
+	}
+
+	for _, stepID := range ids {
+		// TODO: also add conditional check here with expression evaluation
+		ss, _ := r.state.GetStepState(stepID)
+
+		result, _ := r.execStep(ctx, ss, model.ActionStageMain)
+		if result == StatusFailed {
+			return fmt.Errorf("step %s failed at main stage", stepID)
+		}
+	}
+
+	for _, stepID := range ids {
+		// TODO: also add conditional check here with expression evaluation
+		ss, _ := r.state.GetStepState(stepID)
+
+		// skip run steps since they don't have pre runs
+		if ss.Step.Type() == model.StepTypeRun {
+			continue
+		}
+
+		as, _ := r.state.GetActionState(ss.Step.Uses)
+
+		if as.Metadata.Runs.Post == "" {
+			continue
+		}
+
+		result, _ := r.execStep(ctx, ss, model.ActionStagePost)
+		if result == StatusFailed {
+			return fmt.Errorf("step %s failed at post stage", stepID)
 		}
 	}
 
 	return nil
 }
 
-func (r *runner) execStep(ctx context.Context, stage model.ActionStage, stepID string) (ExecStepStatus, error) {
-	// get step run state
-	srs := r.state.Children[stepID]
-	if srs == nil {
-		return StatusFailed, fmt.Errorf("step %s not found", stepID)
+// setupJob performs the `Set up job` step from the Github Actions workflow run to prepare the job environment
+func (r *runner) setupJob(ctx context.Context) error {
+	r.logger.Info("Set up job")
+	r.logger.StartGroup()
+	defer r.logger.EndGroup()
+
+	// ids of the steps to run with execution order
+	ids := r.state.GetStepOrder()
+
+	// Setup steps
+	for _, stepID := range ids {
+		ss, _ := r.state.GetStepState(stepID)
+
+		switch ss.Step.Type() {
+		case model.StepTypeAction:
+			err := r.state.AddAction(ctx, r.client, ss.Step.Uses)
+			if err != nil {
+				return err
+			}
+
+			r.logger.Info(fmt.Sprintf("Download action repository '%s'", ss.Step.Uses))
+		case model.StepTypeRun:
+			path := filepath.Join("scripts", ss.Step.ID, "run.sh")
+			content := []byte(fmt.Sprintf("#!/bin/bash\n%s", ss.Step.Run))
+
+			err := config.WriteFile(path, content, 0755)
+			if err != nil {
+				return err
+			}
+
+			// make it debug level because it's not really important and it's visible in Github Actions logs
+			r.logger.Debug(fmt.Sprintf("Write script to '%s' for step '%s'", path, ss.Step.ID))
+		}
 	}
 
-	switch srs.Step.Type() {
+	r.logger.Info(fmt.Sprintf("Complete job name: %s", r.state.JobName))
+
+	return nil
+}
+
+func (r *runner) execStep(ctx context.Context, ss *statepkg.StepState, stage model.ActionStage) (ExecStepStatus, error) {
+	r.logger.Info(ss.Step.LogMessage(stage))
+	r.logger.StartGroup()
+	defer r.logger.EndGroup()
+
+	switch ss.Step.Type() {
 	case model.StepTypeAction:
-		return r.execStepAction(ctx, stage, srs)
+		return r.execStepAction(ctx, ss, stage)
 	case model.StepTypeRun:
-		return r.execStepRun(ctx, stage, srs)
+		return r.execStepRun(ctx, ss, stage)
 	default:
-		return StatusFailed, fmt.Errorf("not supported step type %s", srs.Step.Type())
+		return StatusFailed, fmt.Errorf("not supported step type %s", ss.Step.Type())
 	}
 }
 
-func (r *runner) execStepAction(ctx context.Context, stage model.ActionStage, srs *StepRunState) (ExecStepStatus, error) {
-	path, action, err := r.state.GetAction(ctx, r.client, srs.Step.Uses)
-	if err != nil {
-		return StatusFailed, err
+func (r *runner) execStepAction(ctx context.Context, ss *statepkg.StepState, stage model.ActionStage) (ExecStepStatus, error) {
+	as, ok := r.state.GetActionState(ss.Step.Uses)
+	if !ok {
+		return StatusFailed, fmt.Errorf("action '%s' not found", ss.Step.Uses)
 	}
-
-	// add action to step run state
-	srs.Action = action
 
 	var runs string
 
 	switch stage {
 	case model.ActionStagePre:
-		runs = action.Runs.Pre
+		runs = as.Metadata.Runs.Pre
 	case model.ActionStageMain:
-		runs = action.Runs.Main
+		runs = as.Metadata.Runs.Main
 	case model.ActionStagePost:
-		runs = action.Runs.Post
+		runs = as.Metadata.Runs.Post
 	default:
 		return StatusFailed, fmt.Errorf("not supported stage %s", stage)
 	}
 
-	// if runs is empty for pre or post, this is a no-op step
-	if runs == "" && stage != model.ActionStageMain {
-		return StatusSkipped, nil
-	}
-
-	// if runs is empty for main, this is a failure
-	if runs == "" && stage == model.ActionStageMain {
-		srs.Result.Conclusion = model.StepStatusFailure
-		srs.Result.Outcome = model.StepStatusFailure
-
-		return StatusFailed, fmt.Errorf("no runs for step %s", srs.Step.ID)
-	}
-
-	// Print step header and wrap step execution in a group
-	r.logger.Info(srs.Step.LogMessage(stage))
-	r.logger.StartGroup()
-	defer r.logger.EndGroup()
-
-	err = execCommand(ctx, stage, []string{"node", fmt.Sprintf("%s/%s", path, runs)}, srs, r.logger)
+	err := r.execCmd(ctx, ss, stage, []string{"node", fmt.Sprintf("%s/%s", as.Path, runs)})
 	if err != nil {
-		srs.Result.Conclusion = model.StepStatusFailure
-		srs.Result.Outcome = model.StepStatusFailure
+		ss.Result.Conclusion = model.StepStatusFailure
+		ss.Result.Outcome = model.StepStatusFailure
+
 		return StatusFailed, err
 	}
 
-	srs.Result.Conclusion = model.StepStatusSuccess
-	srs.Result.Outcome = model.StepStatusSuccess
+	ss.Result.Conclusion = model.StepStatusSuccess
+	ss.Result.Outcome = model.StepStatusSuccess
 
 	return StatusSucceeded, nil
 }
 
-func (r *runner) execStepRun(ctx context.Context, stage model.ActionStage, srs *StepRunState) (ExecStepStatus, error) {
-	// step run only happens for main stage
-	if stage != model.ActionStageMain {
-		return StatusSkipped, nil
-	}
-
-	// TODO: move this to execStep when we add skip and continue-on-error support. Otherwise, we will be printing
-	// invalid logs
-
-	// Print step header and wrap step execution in a group
-	r.logger.Info(srs.Step.LogMessage(stage))
-	r.logger.StartGroup()
-	defer r.logger.EndGroup()
-
-	// script directory
-	path := filepath.Join(ContainerRunnerPath, "scripts", srs.Step.ID)
-
-	// ensure the directory exists
-	//nolint:gosec // it's ok to create a directory with 0755 permissions. This directory contains scripts that will be
-	// executed by the user
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return StatusFailed, err
-	}
-
-	// write the script to disk
-	//nolint:gosec // This is a script, it's supposed to be executable by the user
-	err := os.WriteFile(path, []byte(fmt.Sprintf("#!/bin/bash\n%s", srs.Step.Run)), 0755)
-	if err != nil {
-		return StatusFailed, err
-	}
+func (r *runner) execStepRun(ctx context.Context, ss *statepkg.StepState, stage model.ActionStage) (ExecStepStatus, error) {
+	// path of the run.sh to execute
+	path := config.GetPath("scripts", ss.Step.ID, "run.sh")
 
 	// execute the script
-	err = execCommand(ctx, stage, []string{"bash", "--noprofile", "--norc", "-e", "-o", "pipefail", path}, srs, r.logger)
+	err := r.execCmd(ctx, ss, stage, []string{"bash", "--noprofile", "--norc", "-e", "-o", "pipefail", path})
 	if err != nil {
-		srs.Result.Conclusion = model.StepStatusFailure
-		srs.Result.Outcome = model.StepStatusFailure
+		ss.Result.Conclusion = model.StepStatusFailure
+		ss.Result.Outcome = model.StepStatusFailure
+
 		return StatusFailed, err
 	}
 
-	srs.Result.Conclusion = model.StepStatusSuccess
-	srs.Result.Outcome = model.StepStatusSuccess
+	ss.Result.Conclusion = model.StepStatusSuccess
+	ss.Result.Outcome = model.StepStatusSuccess
 	return StatusSucceeded, nil
+}
+
+func (r *runner) execCmd(ctx context.Context, ss *statepkg.StepState, stage model.ActionStage, args []string) error {
+	// get the step env
+	env, err := getStepEnv(r.state, ss, stage)
+	if err != nil {
+		return err
+	}
+
+	//nolint:gosec // (G204) this is a command runner, we need to run arbitrary commands.
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
+	commandsRaw := bytes.NewBuffer(nil)
+
+	cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
+	cmd.Env = env
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	var commands []*model.Command
+
+	go func() {
+		scanner := bufio.NewScanner(stdoutPipe)
+		for scanner.Scan() {
+			output := scanner.Text()
+
+			// write to stdout as it is so we can keep original formatting
+			stdout.WriteString(output)
+			stdout.WriteString("\n") // scanner strips newlines
+
+			isCommand, command := model.ParseCommand(output)
+
+			// print the output if it is a regular output
+			if !isCommand {
+				r.logger.Info(output)
+
+				continue
+			}
+
+			// add the command to the list of commands to keep it as artifact
+			commands = append(commands, command)
+
+			// write to commands raw so we can keep original formatting
+			commandsRaw.WriteString(output)
+			commandsRaw.WriteString("\n")
+
+			// process the command
+			if err := processGithubWorkflowCommands(command, ss, r.logger); err != nil {
+				fmt.Println(err)
+			}
+		}
+	}()
+
+	cmdErr := cmd.Wait()
+
+	if data := stdout.Bytes(); len(data) > 0 {
+		config.WriteFile(filepath.Join("steps", ss.Step.ID, "logs", string(stage), "stdout.log"), data, 0600)
+	}
+
+	if data := stderr.Bytes(); len(data) > 0 {
+		config.WriteFile(filepath.Join("steps", ss.Step.ID, "logs", string(stage), "stderr.log"), data, 0600)
+	}
+
+	if len(commands) > 0 {
+		config.WriteJsonFile(filepath.Join("steps", ss.Step.ID, "logs", string(stage), "workflow_commands.json"), commands)
+	}
+
+	if data := commandsRaw.Bytes(); len(data) > 0 {
+		config.WriteFile(filepath.Join("steps", ss.Step.ID, "logs", string(stage), "workflow_commands.log"), data, 0600)
+	}
+
+	if cmdErr != nil {
+		return cmdErr
+	}
+
+	// process commands at the end of the command
+	return processFileCommands(ss, stage)
 }

@@ -2,78 +2,110 @@ package runner
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/aweris/ghx/internal/log"
+	"github.com/aweris/ghx/pkg/config"
 	"github.com/aweris/ghx/pkg/model"
+	statepkg "github.com/aweris/ghx/pkg/state"
 )
 
-// ensureDir ensures that the given directory exists.
-func ensureDir(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
+// getStepEnv returns the environment variables for the step to load in cmd exec
+func getStepEnv(state *statepkg.State, ss *statepkg.StepState, stage model.ActionStage) ([]string, error) {
+	// getting the current environment first
+	env := os.Environ()
+
+	// adding the environment variables of the workflow and job to the environment. for duplicate keys, the last one wins
+	for k, v := range state.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	return nil
-}
+	// adding the state, input and environment variables to the environment. for duplicate keys, the last one wins
+	// so getting the current environment first is important
 
-// readRunnerState reads the state of the runner from the file system. if the state does not exist, it will be created.
-func readRunnerState() (*State, error) {
-	file := filepath.Join(ContainerRunnerPath, ContainerRunnerState)
+	for k, v := range ss.State {
+		env = append(env, fmt.Sprintf("STATE_%s=%s", k, v))
+	}
 
-	// ensure the file exists
-	if _, err := os.Stat(file); os.IsNotExist(err) {
-		// Create the file if it doesn't exist
-		file, err := os.Create(file)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create file: %v", err)
+	if ss.Step.Type() == model.StepTypeAction {
+		as, ok := state.GetActionState(ss.Step.Uses)
+		if !ok {
+			return nil, fmt.Errorf("action state not found for action %s", ss.Step.Uses)
 		}
-		defer file.Close()
+
+		// add inputs to the environment
+		for k, v := range ss.Step.With {
+			env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), v))
+		}
+
+		// add default values for inputs that are not defined in the step config
+		for k, v := range as.Metadata.Inputs {
+			if _, ok := ss.Step.With[k]; ok {
+				continue
+			}
+
+			if v.Default == "" {
+				continue
+			}
+
+			// missing in step config and it has a default value
+
+			// currently only support boolean default values. if the default value is not boolean, it will be ignored
+			// TODO: support other types can contain expressions, so we need to evaluate them first
+			normalised := strings.ToLower(v.Default)
+
+			if normalised == "true" || normalised == "false" {
+				env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), normalised))
+			}
+		}
 	}
 
-	data, err := os.ReadFile(file)
+	for k, v := range ss.Step.Environment {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// create directory and files for file commands and add them to the environment as well
+
+	dir := filepath.Join("steps", ss.Step.ID, string(stage), "file_commands")
+
+	var err error
+
+	env, err = appendFileCommandPathToEnv(env, "GITHUB_ENV", filepath.Join(dir, "env"))
 	if err != nil {
 		return nil, err
 	}
 
-	state := &State{
-		ActionPathsBySource: make(map[string]string),
-		StepOrder:           make([]string, 0),
-		Children:            make(map[string]*StepRunState),
-	}
-
-	if len(data) > 0 {
-		err := json.Unmarshal(data, state)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return state, nil
-}
-
-// writeRunnerState writes the state of the runner to the file system.
-func writeRunnerState(state *State) error {
-	data, err := json.Marshal(state)
+	env, err = appendFileCommandPathToEnv(env, "GITHUB_PATH", filepath.Join(dir, "path"))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return os.WriteFile(filepath.Join(ContainerRunnerPath, ContainerRunnerState), data, 0600)
+	env, err = appendFileCommandPathToEnv(env, "GITHUB_STEP_SUMMARY", filepath.Join(dir, "step_summary"))
+	if err != nil {
+		return nil, err
+	}
+
+	env, err = appendFileCommandPathToEnv(env, "GITHUB_ACTION_OUTPUT", filepath.Join(dir, "output"))
+	if err != nil {
+		return nil, err
+	}
+
+	return env, nil
 }
 
-// exportLogArtifact exports a log artifact to the file system.
-func exportStepLogs(srs *StepRunState, stage model.ActionStage, filename string, content []byte) error {
-	path := filepath.Join(srs.GetStepDataDir(stage), "logs")
-
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return err
+// appendFileCommandPathToEnv creates a file and appends the path to the environment
+func appendFileCommandPathToEnv(env []string, key string, path string) ([]string, error) {
+	// ensure the file exists
+	if err := config.EnsureFile(path); err != nil {
+		return nil, err
 	}
 
-	return os.WriteFile(filepath.Join(path, filename), content, 0600)
+	env = append(env, fmt.Sprintf("%s=%s", key, config.GetPath(path)))
+
+	return env, nil
 }
 
 // valuesFromFile extracts file command values from a file. The method supports:
@@ -154,4 +186,89 @@ func valuesFromFile(filePath string) (map[string]string, error) {
 	}
 
 	return keyValues, nil
+}
+
+func processGithubWorkflowCommands(cmd *model.Command, ss *statepkg.StepState, logger *log.Logger) error {
+	switch cmd.Name {
+	case "group":
+		logger.Info(cmd.Value)
+		logger.StartGroup()
+	case "endgroup":
+		logger.EndGroup()
+	case "debug":
+		logger.Debug(cmd.Value)
+	case "error":
+		logger.Errorf(cmd.Value, "file", cmd.Parameters["file"], "line", cmd.Parameters["line"], "col", cmd.Parameters["col"], "endLine", cmd.Parameters["endLine"], "endCol", cmd.Parameters["endCol"], "title", cmd.Parameters["title"])
+	case "warning":
+		logger.Warnf(cmd.Value, "file", cmd.Parameters["file"], "line", cmd.Parameters["line"], "col", cmd.Parameters["col"], "endLine", cmd.Parameters["endLine"], "endCol", cmd.Parameters["endCol"], "title", cmd.Parameters["title"])
+	case "notice":
+		logger.Noticef(cmd.Value, "file", cmd.Parameters["file"], "line", cmd.Parameters["line"], "col", cmd.Parameters["col"], "endLine", cmd.Parameters["endLine"], "endCol", cmd.Parameters["endCol"], "title", cmd.Parameters["title"])
+	case "set-env":
+		if err := os.Setenv(cmd.Parameters["name"], cmd.Value); err != nil {
+			return err
+		}
+	case "set-output":
+		ss.Result.Outputs[cmd.Parameters["name"]] = cmd.Value
+	case "save-state":
+		ss.State[cmd.Parameters["name"]] = cmd.Value
+	case "add-mask":
+		logger.Info(fmt.Sprintf("[add-mask] %s", cmd.Value))
+	case "add-matcher":
+		logger.Info(fmt.Sprintf("[add-matcher] %s", cmd.Value))
+	case "add-path":
+		path := os.Getenv("PATH")
+		path = fmt.Sprintf("%s:%s", path, cmd.Value)
+		if err := os.Setenv("PATH", path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func processFileCommands(ss *statepkg.StepState, stage model.ActionStage) error {
+	dir := config.GetPath("steps", ss.Step.ID, string(stage), "file_commands")
+
+	env, err := valuesFromFile(filepath.Join(dir, "env"))
+	if err != nil {
+		return err
+	}
+
+	for k, v := range env {
+		if err := os.Setenv(k, v); err != nil {
+			return err
+		}
+	}
+
+	paths, err := valuesFromFile(filepath.Join(dir, "path"))
+	if err != nil {
+		return err
+	}
+
+	path := os.Getenv("PATH")
+
+	for p := range paths {
+		path = fmt.Sprintf("%s:%s", path, p)
+	}
+
+	if err := os.Setenv("PATH", path); err != nil {
+		return err
+	}
+
+	output, err := valuesFromFile(filepath.Join(dir, "output"))
+	if err != nil {
+		return err
+	}
+
+	if ss.Result.Outputs == nil {
+		ss.Result.Outputs = make(map[string]string)
+	}
+
+	for k, v := range output {
+		ss.Result.Outputs[k] = v
+	}
+
+	// TODO: not sure what should I do with step summary, so I'm ignoring it for now
+
+	return nil
 }
