@@ -3,13 +3,14 @@ module github.com/aweris/ghx
 go 1.20
 
 require (
-	dagger.io/dagger v0.7.0
+	dagger.io/dagger v0.7.1
 	github.com/rhysd/actionlint v1.6.24
 	github.com/spf13/cobra v1.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	github.com/99designs/gqlgen v0.17.2 // indirect
 	github.com/Khan/genqlient v0.5.0 // indirect
 	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/fatih/color v1.15.0 // indirect
