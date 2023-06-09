@@ -3,6 +3,7 @@ package runner
 import (
 	"bufio"
 	"fmt"
+	"github.com/aweris/ghx/pkg/actions"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,9 +37,23 @@ func getStepEnv(state *statepkg.State, ss *statepkg.StepState, stage model.Actio
 			return nil, fmt.Errorf("action state not found for action %s", ss.Step.Uses)
 		}
 
+		// get context for the github actions expressions
+		ac := state.GetActionsContext()
+
 		// add inputs to the environment
 		for k, v := range ss.Step.With {
-			env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), v))
+			// TODO: temporary solution evaluate github expressions here. Need to implement a proper solution
+
+			// convert value to Evaluable String type
+			str := actions.NewString(v)
+
+			// evaluate the expression
+			res, err := str.Eval(ac)
+			if err != nil {
+				return nil, fmt.Errorf("failed to evaluate default value for input %s: %v", k, err)
+			}
+
+			env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), res))
 		}
 
 		// add default values for inputs that are not defined in the step config
@@ -50,16 +65,18 @@ func getStepEnv(state *statepkg.State, ss *statepkg.StepState, stage model.Actio
 			if v.Default == "" {
 				continue
 			}
+			// TODO: temporary solution evaluate github expressions here. Need to implement a proper solution
 
-			// missing in step config and it has a default value
+			// convert value to Evaluable String type
+			str := actions.NewString(v.Default)
 
-			// currently only support boolean default values. if the default value is not boolean, it will be ignored
-			// TODO: support other types can contain expressions, so we need to evaluate them first
-			normalised := strings.ToLower(v.Default)
-
-			if normalised == "true" || normalised == "false" {
-				env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), normalised))
+			// evaluate the expression
+			res, err := str.Eval(ac)
+			if err != nil {
+				return nil, fmt.Errorf("failed to evaluate default value for input %s: %v", k, err)
 			}
+
+			env = append(env, fmt.Sprintf("INPUT_%s=%s", strings.ToUpper(k), res))
 		}
 	}
 
