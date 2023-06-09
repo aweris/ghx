@@ -8,6 +8,7 @@ import (
 
 	"dagger.io/dagger"
 
+	"github.com/aweris/ghx/pkg/actions"
 	"github.com/aweris/ghx/pkg/config"
 	"github.com/aweris/ghx/pkg/model"
 )
@@ -135,4 +136,17 @@ func (s *State) GetStepState(id string) (*StepState, bool) {
 // GetStepOrder returns the ids of the steps in the order they are added to the state which is the order
 func (s *State) GetStepOrder() []string {
 	return s.StepOrder
+}
+
+func (s *State) GetActionsContext() *actions.Context {
+	// load the actions context from the environment variables
+	ac := actions.NewContextFromEnv()
+
+	ac.Env = s.Env
+
+	for _, ss := range s.Steps {
+		ac.Steps[ss.Step.ID] = ss.Result
+	}
+
+	return ac
 }
