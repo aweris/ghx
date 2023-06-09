@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aweris/ghx/pkg/model"
-	"github.com/aweris/ghx/pkg/runner"
+	statepkg "github.com/aweris/ghx/pkg/state"
 )
 
 // NewCommand  creates a new root command.
@@ -38,12 +38,13 @@ func NewCommand() *cobra.Command {
 			}
 			defer client.Close()
 
-			ghx, err := runner.New(client)
+			state, err := statepkg.GetState()
 			if err != nil {
 				return err
 			}
-			defer ghx.Close()
+			defer state.Close()
 
+			var step *model.Step
 			if stepJSON != "" {
 				var step model.Step
 
@@ -51,29 +52,30 @@ func NewCommand() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("failed to parse step json: %w", err)
 				}
-
-				if stepOverride && step.ID == "" {
-					return fmt.Errorf("step id must be provided to override")
-				}
-
-				ghx.WithStep(&step, stepOverride)
 			} else {
 				if stepOverride && stepID == "" {
 					return fmt.Errorf("step id must be provided to override")
 				}
 
-				ghx.WithStep(
-					&model.Step{
-						ID:          stepID,
-						Name:        stepName,
-						Uses:        stepUses,
-						Environment: stepEnvironment,
-						With:        stepWith,
-						Run:         stepRun,
-						Shell:       stepShell,
-					},
-					stepOverride,
-				)
+				step = &model.Step{
+					ID:          stepID,
+					Name:        stepName,
+					Uses:        stepUses,
+					Environment: stepEnvironment,
+					With:        stepWith,
+					Run:         stepRun,
+					Shell:       stepShell,
+				}
+			}
+
+			if stepOverride && step.ID == "" {
+				return fmt.Errorf("step id must be provided to override")
+			}
+
+			if stepOverride {
+				state.OverrideStep(step.ID, step)
+			} else {
+				state.AddStep(step)
 			}
 
 			return nil

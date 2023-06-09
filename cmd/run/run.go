@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"dagger.io/dagger"
 
 	"github.com/spf13/cobra"
 
+	"github.com/aweris/ghx/pkg/config"
 	runnerpkg "github.com/aweris/ghx/pkg/runner"
+	statepkg "github.com/aweris/ghx/pkg/state"
 )
 
 // NewCommand  creates a new root command.
@@ -34,11 +35,9 @@ func NewCommand() *cobra.Command {
 				fmt.Printf("Error executing command: %v\n", err)
 			}
 
-			path := filepath.Join(runnerpkg.ContainerRunnerPath, "exit-code")
+			fmt.Printf("Writing exit code %d to %s\n", exitCode, config.GetPath("exit-code"))
 
-			fmt.Printf("Writing exit code %d to %s\n", exitCode, path)
-
-			return os.WriteFile(path, []byte(fmt.Sprintf("%d", exitCode)), 0600)
+			return config.WriteFile("exit-code", []byte(fmt.Sprintf("%d", exitCode)), 0600)
 		},
 	}
 
@@ -52,11 +51,15 @@ func run(ctx context.Context) error {
 	}
 	defer client.Close()
 
-	runner, err := runnerpkg.New(client)
+	state, err := statepkg.GetState()
 	if err != nil {
 		return err
 	}
-	defer runner.Close()
+	defer state.Close()
+	runner, err := runnerpkg.New(client, state)
+	if err != nil {
+		return err
+	}
 
 	return runner.Execute(ctx)
 }

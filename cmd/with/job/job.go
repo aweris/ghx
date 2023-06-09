@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aweris/ghx/pkg/repository"
-	"github.com/aweris/ghx/pkg/runner"
+	statepkg "github.com/aweris/ghx/pkg/state"
 )
 
 // NewCommand  creates a new root command.
@@ -51,13 +51,20 @@ func NewCommand() *cobra.Command {
 				return fmt.Errorf("job %s/%s not found", workflowName, jobName)
 			}
 
-			ghx, err := runner.New(client)
+			if job.Name == "" {
+				job.Name = jobName
+			}
+
+			state, err := statepkg.GetState()
 			if err != nil {
 				return err
 			}
-			defer ghx.Close()
+			defer state.Close()
 
-			ghx.WithJob(workflow, job)
+			err = state.AddWorkflowAndJob(workflow, job)
+			if err != nil {
+				return err
+			}
 
 			return nil
 		},
