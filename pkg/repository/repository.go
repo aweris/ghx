@@ -12,8 +12,13 @@ import (
 	"github.com/aweris/ghx/pkg/model"
 )
 
-func LoadWorkflows(ctx context.Context, client *dagger.Client, path string) (model.Workflows, error) {
-	dir := client.Host().Directory(filepath.Join(path, ".github/workflows"))
+func LoadWorkflows(ctx context.Context, client *dagger.Client, path, workflowDir string) (model.Workflows, error) {
+	// use default workflow directory if not provided
+	if workflowDir == "" {
+		workflowDir = ".github/workflows"
+	}
+
+	dir := client.Host().Directory(filepath.Join(path, workflowDir))
 
 	entries, err := dir.Entries(ctx)
 	if err != nil {
@@ -27,7 +32,7 @@ func LoadWorkflows(ctx context.Context, client *dagger.Client, path string) (mod
 		if strings.HasSuffix(entry, ".yaml") || strings.HasSuffix(entry, ".yml") {
 			file := dir.File(entry)
 
-			workflow, err := loadWorkflow(ctx, filepath.Join(".github/workflows", entry), file)
+			workflow, err := loadWorkflow(ctx, filepath.Join(workflowDir, entry), file)
 			if err != nil {
 				return nil, err
 			}

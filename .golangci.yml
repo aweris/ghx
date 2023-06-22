@@ -38,4 +38,5 @@ linters-settings:
           - $gostd
           - dagger.io/dagger
           - github.com/aweris/ghx
+          - github.com/spf13/cobra
           - github.com/rhysd/actionlint

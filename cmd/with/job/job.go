@@ -16,6 +16,7 @@ import (
 func NewCommand() *cobra.Command {
 	// Flags for the Job command
 	var (
+		workflowDir  string
 		workflowName string
 		jobName      string
 	)
@@ -41,7 +42,7 @@ func NewCommand() *cobra.Command {
 			}
 
 			// TODO: temporary solution to load workflow from current directory. `gh` is missing in runner image
-			workflows, err := repository.LoadWorkflows(cmd.Context(), client, ".")
+			workflows, err := repository.LoadWorkflows(cmd.Context(), client, ".", workflowDir)
 			if err != nil {
 				return err
 			}
@@ -76,6 +77,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	// Define flags for the Step command
+	cmd.Flags().StringVar(&workflowDir, "workflow-dir", ".github/workflows", "Directory containing workflow files.")
 	cmd.Flags().StringVar(&workflowName, "workflow", "", "Name of the workflow. If workflow doesn't have name, than it must be relative path to the workflow file")
 	cmd.Flags().StringVar(&jobName, "job", "", "Name of the job")
 
