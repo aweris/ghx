@@ -1,5 +1,7 @@
 # GitHub Actions Executor
 
+**DEPRECATED**: This project is deprecated. It moved back to [aweris/gale/tools/ghx](https://github.com/aweris/gale/tree/main/tools/ghx) as a sub project.
+
 The GitHub Actions Executor is a helper command for running [GitHub Actions](https://docs.github.com/en/actions) from
 inside of [Dagger](https://dagger.io) containers.
 
